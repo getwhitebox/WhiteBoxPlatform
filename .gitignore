@@ -1,0 +1,29 @@
+# Downloaded libraries (re-created by "npm install")
+node_modules/
+
+# Build output
+.next/
+out/
+build/
+dist/
+
+# Secrets and environment settings: NEVER commit these
+.env
+.env.*
+!.env.example
+
+# Hosting tool settings
+.vercel/
+
+# Logs and test output
+*.log
+npm-debug.log*
+coverage/
+
+# Editor and operating system clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
