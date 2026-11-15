@@ -5,7 +5,8 @@ Business management platform for White Box Mobile Storage: customers, projects, 
 It is built to support multiple companies, brands and locations under one parent organization.
 
 - **Plan & architecture:** [docs/PLAN.md](docs/PLAN.md)
-- **Status:** Phase 0 – environment and accounts
+- **Live site:** https://white-box-platform.vercel.app (updates automatically from GitHub)
+- **Status:** Phase 2 – database foundation
 
 ## Tools required on your computer
 - Git
