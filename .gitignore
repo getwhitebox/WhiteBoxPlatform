@@ -38,3 +38,8 @@ next-env.d.ts
 # Alternative package managers
 /.pnp
 .pnp.*
+
+/src/generated/prisma
+
+# Generated database client (re-created by "prisma generate")
+/src/generated/

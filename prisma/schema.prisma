@@ -1,0 +1,682 @@
+// =============================================================================
+// WhiteBoxPlatform – database design
+// =============================================================================
+// This file describes every table in the database. Prisma reads it and creates
+// or changes the real tables safely ("migrations").
+//
+// Reading guide:
+//   model X { ... }   = a table
+//   enum X { ... }    = a fixed list of allowed values
+//   String? / Int?    = the "?" means the field is optional
+//   @id               = the record's unique identifier
+//   @default(...)     = value used automatically if none is given
+//   @relation(...)    = a link to a record in another table
+//   @@map("...")      = the table's name inside the database
+//
+// Conventions (see docs/PLAN.md):
+//   - IDs are random UUIDs.
+//   - Money is stored in whole cents (e.g. $185.00 = 18500).
+//   - Every business table has companyId, so each company's data is separate.
+//   - Records are archived (archivedAt), never deleted.
+//   - Times are stored in UTC.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// 1. PLATFORM & MULTI-COMPANY STRUCTURE
+// =============================================================================
+
+/// A parent group: your holding organization, or a future licensee.
+model Organization {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  name       String
+  slug       String    @unique // short web-safe name, e.g. "white-box"
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @db.Timestamptz
+  archivedAt DateTime? @db.Timestamptz
+
+  companies   Company[]
+  memberships Membership[]
+
+  @@map("organizations")
+}
+
+/// An operating business with its own customers, inventory, employees and operations.
+model Company {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @db.Uuid
+  name           String // display name, e.g. "White Box Mobile Storage"
+  legalName      String?
+  slug           String // short web-safe name, unique within the organization
+  unitPrefix     String // container numbering prefix, e.g. "WB" → WB001
+  timeZone       String    @default("America/Denver")
+  currency       String    @default("USD")
+  phone          String?
+  email          String?
+  website        String?
+  createdAt      DateTime  @default(now()) @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @db.Timestamptz
+  archivedAt     DateTime? @db.Timestamptz
+
+  organization     Organization        @relation(fields: [organizationId], references: [id])
+  brands           Brand[]
+  locations        Location[]
+  memberships      Membership[]
+  employees        Employee[]
+  customers        Customer[]
+  customerContacts CustomerContact[]
+  projects         Project[]
+  containerTypes   ContainerType[]
+  containers       Container[]
+  containerEvents  ContainerEvent[]
+  maintenance      MaintenanceRecord[]
+  rentals          Rental[]
+  jobs             Job[]
+  externalLinks    ExternalLink[]
+  activityNotes    ActivityNote[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("companies")
+}
+
+/// A customer-facing name and look within a company (logo, colors, contact info).
+model Brand {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  companyId    String    @db.Uuid
+  name         String
+  isDefault    Boolean   @default(false)
+  logoUrl      String?
+  primaryColor String? // e.g. "#111111"
+  phone        String?
+  email        String?
+  website      String?
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @db.Timestamptz
+  archivedAt   DateTime? @db.Timestamptz
+
+  company   Company    @relation(fields: [companyId], references: [id])
+  customers Customer[]
+
+  @@index([companyId])
+  @@map("brands")
+}
+
+enum LocationType {
+  YARD
+  DEPOT
+  OFFICE
+}
+
+/// A yard, depot or office belonging to a company.
+model Location {
+  id           String       @id @default(uuid(7)) @db.Uuid
+  companyId    String       @db.Uuid
+  name         String // e.g. "St George Yard"
+  type         LocationType @default(YARD)
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String       @default("US")
+  latitude     Decimal?     @db.Decimal(9, 6)
+  longitude    Decimal?     @db.Decimal(9, 6)
+  notes        String?
+  createdAt    DateTime     @default(now()) @db.Timestamptz
+  updatedAt    DateTime     @updatedAt @db.Timestamptz
+  archivedAt   DateTime?    @db.Timestamptz
+
+  company            Company          @relation(fields: [companyId], references: [id])
+  homeContainers     Container[]      @relation("ContainerHomeLocation")
+  currentContainers  Container[]      @relation("ContainerCurrentLocation")
+  employeesBasedHere Employee[]
+  eventsFrom         ContainerEvent[] @relation("EventFromLocation")
+  eventsTo           ContainerEvent[] @relation("EventToLocation")
+  jobsFrom           Job[]            @relation("JobFromLocation")
+  jobsTo             Job[]            @relation("JobToLocation")
+
+  @@index([companyId])
+  @@map("locations")
+}
+
+/// A person who can log in. The id matches their Supabase login account.
+model User {
+  id              String    @id @db.Uuid
+  email           String    @unique
+  fullName        String?
+  isPlatformAdmin Boolean   @default(false) // full access to everything (you)
+  createdAt       DateTime  @default(now()) @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @db.Timestamptz
+  archivedAt      DateTime? @db.Timestamptz
+
+  memberships     Membership[]
+  employee        Employee?
+  containerEvents ContainerEvent[] @relation("EventRecordedBy")
+  jobsCompleted   Job[]            @relation("JobCompletedBy")
+  activityNotes   ActivityNote[]
+  auditEntries    AuditLog[]
+
+  @@map("users")
+}
+
+enum Role {
+  ORG_OWNER // full control of the organization and all its companies
+  ORG_ADMIN // manage all companies in the organization
+  COMPANY_ADMIN // manage one company, including its users
+  OFFICE_STAFF // day-to-day operations: customers, rentals, scheduling
+  DRIVER // see and complete assigned jobs
+  READ_ONLY // view only
+}
+
+/// Grants a user a role. With companyId empty, the role covers every company
+/// in the organization (central administration).
+model Membership {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  userId         String    @db.Uuid
+  organizationId String    @db.Uuid
+  companyId      String?   @db.Uuid
+  role           Role
+  createdAt      DateTime  @default(now()) @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @db.Timestamptz
+  archivedAt     DateTime? @db.Timestamptz
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  company      Company?     @relation(fields: [companyId], references: [id])
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([companyId])
+  @@map("memberships")
+}
+
+/// A staff member or driver. May or may not have a login (userId).
+model Employee {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  companyId      String    @db.Uuid
+  userId         String?   @unique @db.Uuid
+  firstName      String
+  lastName       String
+  jobTitle       String?
+  phone          String?
+  email          String?
+  homeLocationId String?   @db.Uuid
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @db.Timestamptz
+  archivedAt     DateTime? @db.Timestamptz
+
+  company      Company   @relation(fields: [companyId], references: [id])
+  user         User?     @relation(fields: [userId], references: [id])
+  homeLocation Location? @relation(fields: [homeLocationId], references: [id])
+  assignedJobs Job[]
+
+  @@index([companyId])
+  @@map("employees")
+}
+
+// =============================================================================
+// 2. CUSTOMERS & PROJECTS
+// =============================================================================
+
+enum CustomerType {
+  RESIDENTIAL
+  COMMERCIAL
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Customer {
+  id                  String         @id @default(uuid(7)) @db.Uuid
+  companyId           String         @db.Uuid
+  brandId             String?        @db.Uuid
+  type                CustomerType   @default(RESIDENTIAL)
+  status              CustomerStatus @default(ACTIVE)
+  displayName         String // how the customer appears in lists
+  firstName           String?
+  lastName            String?
+  businessName        String?
+  email               String?
+  phone               String?
+  billingAddressLine1 String?
+  billingAddressLine2 String?
+  billingCity         String?
+  billingState        String?
+  billingPostalCode   String?
+  billingCountry      String         @default("US")
+  notes               String?
+  createdAt           DateTime       @default(now()) @db.Timestamptz
+  updatedAt           DateTime       @updatedAt @db.Timestamptz
+  archivedAt          DateTime?      @db.Timestamptz
+
+  company  Company           @relation(fields: [companyId], references: [id])
+  brand    Brand?            @relation(fields: [brandId], references: [id])
+  contacts CustomerContact[]
+  projects Project[]
+
+  @@index([companyId])
+  @@index([companyId, displayName])
+  @@map("customers")
+}
+
+/// Additional people for a customer: site contact, accounts payable, etc.
+model CustomerContact {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  companyId  String    @db.Uuid
+  customerId String    @db.Uuid
+  name       String
+  title      String? // e.g. "Site foreman"
+  email      String?
+  phone      String?
+  isPrimary  Boolean   @default(false)
+  notes      String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @db.Timestamptz
+  archivedAt DateTime? @db.Timestamptz
+
+  company        Company   @relation(fields: [companyId], references: [id])
+  customer       Customer  @relation(fields: [customerId], references: [id])
+  siteContactFor Project[]
+
+  @@index([companyId])
+  @@index([customerId])
+  @@map("customer_contacts")
+}
+
+enum ProjectStatus {
+  QUOTE
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+/// A job or site for a customer. A customer can have many projects.
+model Project {
+  id                 String        @id @default(uuid(7)) @db.Uuid
+  companyId          String        @db.Uuid
+  customerId         String        @db.Uuid
+  name               String // e.g. "Kitchen remodel – 12 Oak St"
+  status             ProjectStatus @default(QUOTE)
+  siteAddressLine1   String?
+  siteAddressLine2   String?
+  siteCity           String?
+  siteState          String?
+  sitePostalCode     String?
+  siteCountry        String        @default("US")
+  siteLatitude       Decimal?      @db.Decimal(9, 6)
+  siteLongitude      Decimal?      @db.Decimal(9, 6)
+  siteContactId      String?       @db.Uuid
+  accessInstructions String? // gate codes, placement, hazards
+  startDate          DateTime?     @db.Date
+  endDate            DateTime?     @db.Date
+  notes              String?
+  createdAt          DateTime      @default(now()) @db.Timestamptz
+  updatedAt          DateTime      @updatedAt @db.Timestamptz
+  archivedAt         DateTime?     @db.Timestamptz
+
+  company          Company          @relation(fields: [companyId], references: [id])
+  customer         Customer         @relation(fields: [customerId], references: [id])
+  siteContact      CustomerContact? @relation(fields: [siteContactId], references: [id])
+  rentals          Rental[]
+  jobs             Job[]
+  containersOnSite Container[]
+  containerEvents  ContainerEvent[]
+
+  @@index([companyId])
+  @@index([customerId])
+  @@map("projects")
+}
+
+// =============================================================================
+// 3. CONTAINER INVENTORY & HISTORY
+// =============================================================================
+
+/// A size or kind of container, e.g. 8' x 8' x 16'.
+model ContainerType {
+  id                      String    @id @default(uuid(7)) @db.Uuid
+  companyId               String    @db.Uuid
+  name                    String // e.g. "16 ft Standard"
+  lengthFt                Decimal   @db.Decimal(5, 2)
+  widthFt                 Decimal   @db.Decimal(5, 2)
+  heightFt                Decimal   @db.Decimal(5, 2)
+  description             String?
+  defaultMonthlyRateCents Int?
+  isActive                Boolean   @default(true)
+  createdAt               DateTime  @default(now()) @db.Timestamptz
+  updatedAt               DateTime  @updatedAt @db.Timestamptz
+  archivedAt              DateTime? @db.Timestamptz
+
+  company    Company     @relation(fields: [companyId], references: [id])
+  containers Container[]
+
+  @@index([companyId])
+  @@map("container_types")
+}
+
+enum ContainerStatus {
+  AVAILABLE // in a yard, ready to rent
+  RESERVED // promised to an upcoming rental
+  IN_TRANSIT // on the truck
+  ON_RENT // at a customer's site
+  MAINTENANCE // being repaired or serviced
+  RETIRED // permanently out of service
+}
+
+enum ContainerCondition {
+  NEW
+  GOOD
+  FAIR
+  POOR
+  DAMAGED
+}
+
+/// One physical container, e.g. WB001.
+model Container {
+  id                   String             @id @default(uuid(7)) @db.Uuid
+  companyId            String             @db.Uuid
+  unitNumber           String // e.g. "WB001"; unique within the company
+  containerTypeId      String             @db.Uuid
+  status               ContainerStatus    @default(AVAILABLE)
+  condition            ContainerCondition @default(GOOD)
+  homeLocationId       String?            @db.Uuid // the yard it normally returns to
+  currentLocationId    String?            @db.Uuid // set when it is at a yard
+  currentProjectId     String?            @db.Uuid // set when it is at a customer site
+  serialNumber         String?
+  acquiredOn           DateTime?          @db.Date
+  acquisitionCostCents Int?
+  notes                String?
+  createdAt            DateTime           @default(now()) @db.Timestamptz
+  updatedAt            DateTime           @updatedAt @db.Timestamptz
+  archivedAt           DateTime?          @db.Timestamptz
+
+  company         Company             @relation(fields: [companyId], references: [id])
+  containerType   ContainerType       @relation(fields: [containerTypeId], references: [id])
+  homeLocation    Location?           @relation("ContainerHomeLocation", fields: [homeLocationId], references: [id])
+  currentLocation Location?           @relation("ContainerCurrentLocation", fields: [currentLocationId], references: [id])
+  currentProject  Project?            @relation(fields: [currentProjectId], references: [id])
+  events          ContainerEvent[]
+  maintenance     MaintenanceRecord[]
+  rentals         Rental[]
+  jobs            Job[]
+
+  @@unique([companyId, unitNumber])
+  @@index([companyId, status])
+  @@map("containers")
+}
+
+enum ContainerEventType {
+  ADDED_TO_FLEET
+  DELIVERED
+  PICKED_UP
+  RELOCATED
+  SWAPPED
+  TRANSFERRED_LOCATION // moved between your yards
+  TRANSFERRED_COMPANY // moved between your companies
+  STATUS_CHANGED
+  CONDITION_CHANGED
+  INSPECTED
+  DAMAGE_REPORTED
+  MAINTENANCE_STARTED
+  MAINTENANCE_COMPLETED
+  RETIRED
+  NOTE
+}
+
+/// PERMANENT HISTORY. Rows are only ever added – never edited or deleted.
+/// (The database itself will enforce this; see Phase 2 security step.)
+model ContainerEvent {
+  id                  String             @id @default(uuid(7)) @db.Uuid
+  companyId           String             @db.Uuid // company that owned the container at the time
+  containerId         String             @db.Uuid
+  type                ContainerEventType
+  occurredAt          DateTime           @db.Timestamptz // when it happened
+  recordedAt          DateTime           @default(now()) @db.Timestamptz // when it was entered
+  recordedByUserId    String?            @db.Uuid
+  fromStatus          ContainerStatus?
+  toStatus            ContainerStatus?
+  fromLocationId      String?            @db.Uuid
+  toLocationId        String?            @db.Uuid
+  projectId           String?            @db.Uuid
+  rentalId            String?            @db.Uuid
+  jobId               String?            @db.Uuid
+  maintenanceRecordId String?            @db.Uuid
+  notes               String?
+  details             Json? // extra facts, e.g. previous and new company for a transfer
+
+  company           Company            @relation(fields: [companyId], references: [id])
+  container         Container          @relation(fields: [containerId], references: [id])
+  recordedBy        User?              @relation("EventRecordedBy", fields: [recordedByUserId], references: [id])
+  fromLocation      Location?          @relation("EventFromLocation", fields: [fromLocationId], references: [id])
+  toLocation        Location?          @relation("EventToLocation", fields: [toLocationId], references: [id])
+  project           Project?           @relation(fields: [projectId], references: [id])
+  rental            Rental?            @relation(fields: [rentalId], references: [id])
+  job               Job?               @relation(fields: [jobId], references: [id])
+  maintenanceRecord MaintenanceRecord? @relation(fields: [maintenanceRecordId], references: [id])
+
+  @@index([containerId, occurredAt])
+  @@index([companyId])
+  @@map("container_events")
+}
+
+enum MaintenanceStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+/// A repair or service on a container.
+model MaintenanceRecord {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  companyId   String            @db.Uuid
+  containerId String            @db.Uuid
+  status      MaintenanceStatus @default(OPEN)
+  description String // e.g. "Replace door seal"
+  vendor      String?
+  costCents   Int?
+  startedOn   DateTime?         @db.Date
+  completedOn DateTime?         @db.Date
+  notes       String?
+  createdAt   DateTime          @default(now()) @db.Timestamptz
+  updatedAt   DateTime          @updatedAt @db.Timestamptz
+  archivedAt  DateTime?         @db.Timestamptz
+
+  company   Company          @relation(fields: [companyId], references: [id])
+  container Container        @relation(fields: [containerId], references: [id])
+  events    ContainerEvent[]
+
+  @@index([companyId])
+  @@index([containerId])
+  @@map("maintenance_records")
+}
+
+// =============================================================================
+// 4. RENTALS & OPERATIONS
+// =============================================================================
+
+enum RentalStatus {
+  RESERVED // booked, not yet delivered
+  ACTIVE // on rent at the site
+  ENDED // picked up
+  CANCELLED
+}
+
+enum RatePeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+/// One container on one project, with its own dates and pricing.
+/// Adding a container to an existing project = a new Rental.
+/// Removing one = ending that Rental.
+model Rental {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  companyId        String       @db.Uuid
+  projectId        String       @db.Uuid
+  containerId      String       @db.Uuid
+  status           RentalStatus @default(RESERVED)
+  plannedStartDate DateTime?    @db.Date
+  plannedEndDate   DateTime?    @db.Date
+  startDate        DateTime?    @db.Date // actual on-rent date (delivered)
+  endDate          DateTime?    @db.Date // actual off-rent date (picked up)
+  rateCents        Int // e.g. 18500 = $185.00
+  ratePeriod       RatePeriod   @default(MONTHLY)
+  deliveryFeeCents Int?
+  pickupFeeCents   Int?
+  placementNotes   String? // e.g. "Left side of driveway, doors facing street"
+  notes            String?
+  createdAt        DateTime     @default(now()) @db.Timestamptz
+  updatedAt        DateTime     @updatedAt @db.Timestamptz
+  archivedAt       DateTime?    @db.Timestamptz
+
+  company         Company          @relation(fields: [companyId], references: [id])
+  project         Project          @relation(fields: [projectId], references: [id])
+  container       Container        @relation(fields: [containerId], references: [id])
+  jobs            Job[]
+  containerEvents ContainerEvent[]
+
+  @@index([companyId, status])
+  @@index([projectId])
+  @@index([containerId])
+  @@map("rentals")
+}
+
+enum JobType {
+  DELIVERY
+  PICKUP
+  RELOCATION // move within a site or between sites
+  SWAP // exchange one container for another
+  SERVICE // on-site service visit
+}
+
+enum JobStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+/// A scheduled delivery, pickup, relocation, swap or service visit.
+/// Completing a job updates the container and writes a ContainerEvent.
+model Job {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  companyId          String    @db.Uuid
+  type               JobType
+  status             JobStatus @default(SCHEDULED)
+  projectId          String?   @db.Uuid
+  rentalId           String?   @db.Uuid
+  containerId        String?   @db.Uuid
+  fromLocationId     String?   @db.Uuid // yard it leaves from (deliveries)
+  toLocationId       String?   @db.Uuid // yard it returns to (pickups)
+  scheduledDate      DateTime  @db.Date
+  windowStart        DateTime? @db.Time // e.g. 08:00
+  windowEnd          DateTime? @db.Time // e.g. 12:00
+  assignedEmployeeId String?   @db.Uuid
+  completedAt        DateTime? @db.Timestamptz
+  completedByUserId  String?   @db.Uuid
+  notes              String?
+  createdAt          DateTime  @default(now()) @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @db.Timestamptz
+  archivedAt         DateTime? @db.Timestamptz
+
+  company          Company          @relation(fields: [companyId], references: [id])
+  project          Project?         @relation(fields: [projectId], references: [id])
+  rental           Rental?          @relation(fields: [rentalId], references: [id])
+  container        Container?       @relation(fields: [containerId], references: [id])
+  fromLocation     Location?        @relation("JobFromLocation", fields: [fromLocationId], references: [id])
+  toLocation       Location?        @relation("JobToLocation", fields: [toLocationId], references: [id])
+  assignedEmployee Employee?        @relation(fields: [assignedEmployeeId], references: [id])
+  completedBy      User?            @relation("JobCompletedBy", fields: [completedByUserId], references: [id])
+  containerEvents  ContainerEvent[]
+
+  @@index([companyId, scheduledDate])
+  @@index([rentalId])
+  @@index([containerId])
+  @@map("jobs")
+}
+
+// =============================================================================
+// 5. INTEGRATIONS, NOTES & AUDIT
+// =============================================================================
+
+enum ExternalProvider {
+  SQUARE
+}
+
+/// Links one of our records to the same record in an outside system,
+/// e.g. a Customer to its Square customer ID.
+model ExternalLink {
+  id           String           @id @default(uuid(7)) @db.Uuid
+  companyId    String           @db.Uuid
+  provider     ExternalProvider
+  entityType   String // e.g. "Customer"
+  entityId     String           @db.Uuid // our record's id
+  externalId   String // the outside system's id
+  lastSyncedAt DateTime?        @db.Timestamptz
+  details      Json?
+  createdAt    DateTime         @default(now()) @db.Timestamptz
+  updatedAt    DateTime         @updatedAt @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, provider, entityType, externalId])
+  @@index([entityType, entityId])
+  @@map("external_links")
+}
+
+enum NoteSubject {
+  CUSTOMER
+  PROJECT
+  CONTAINER
+  RENTAL
+  JOB
+}
+
+/// Timeline notes, e.g. "Called customer about extending rental".
+model ActivityNote {
+  id           String      @id @default(uuid(7)) @db.Uuid
+  companyId    String      @db.Uuid
+  subjectType  NoteSubject
+  subjectId    String      @db.Uuid
+  body         String
+  authorUserId String?     @db.Uuid
+  createdAt    DateTime    @default(now()) @db.Timestamptz
+  archivedAt   DateTime?   @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id])
+  author  User?   @relation(fields: [authorUserId], references: [id])
+
+  @@index([companyId, subjectType, subjectId])
+  @@map("activity_notes")
+}
+
+/// Who changed what, and when. Add-only, like container history.
+model AuditLog {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String?  @db.Uuid
+  companyId      String?  @db.Uuid
+  userId         String?  @db.Uuid
+  action         String // e.g. "create", "update", "archive", "login"
+  entityType     String
+  entityId       String?  @db.Uuid
+  before         Json?
+  after          Json?
+  createdAt      DateTime @default(now()) @db.Timestamptz
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_log")
+}
