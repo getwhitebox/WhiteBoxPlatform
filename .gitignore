@@ -27,3 +27,14 @@ desktop.ini
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Next.js / TypeScript generated files
+next-env.d.ts
+*.tsbuildinfo
+
+# Certificates and private keys
+*.pem
+
+# Alternative package managers
+/.pnp
+.pnp.*

@@ -137,6 +137,8 @@ Steps to independence (later stages): CSV import â†’ read-only Square API sync â
 | Development | Your computer + Vercel preview links | Supabase project **whitebox-dev** (sample data only) |
 | Production | Vercel production site | Supabase project **whitebox-prod** (real data) |
 
+**Region:** both Supabase projects are in **West US (Oregon), `us-west-2`**. Vercel server functions use the matching region, **Portland (`pdx1`)**, so the app runs next to its database.
+
 Database changes are applied to development first, checked, then promoted to production.
 
 ---
