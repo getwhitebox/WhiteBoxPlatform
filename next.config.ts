@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // Cache Components is intentionally OFF: every page shows logged-in,
+  // company-specific data, so pages are always rendered fresh per request.
   turbopack: {
     rules: {
       "*.css": {
