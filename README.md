@@ -6,7 +6,8 @@ It is built to support multiple companies, brands and locations under one parent
 
 - **Plan & architecture:** [docs/PLAN.md](docs/PLAN.md)
 - **Live site:** https://white-box-platform.vercel.app (updates automatically from GitHub)
-- **Status:** Phase 2 – database foundation
+- **Security model:** [docs/SECURITY.md](docs/SECURITY.md) (run `npm run test:security`)
+- **Status:** Phase 2 complete (database foundation + security). Next: Phase 3, login
 
 ## Tools required on your computer
 - Git

@@ -124,6 +124,7 @@ Steps to independence (later stages): CSV import â†’ read-only Square API sync â
 
 ## 6. Security
 
+- **Details:** see [SECURITY.md](SECURITY.md). Implemented and tested in Phase 2.
 - **Company data separation.** Two layers. (1) All data access goes through one server-side layer that always filters by the user's current company. (2) PostgreSQL **row-level security** rules in the database block cross-company access even if app code has a bug. Automated tests check that one company cannot read another's data.
 - **Permissions.** Each action (e.g. "edit customers", "complete jobs") is checked on the server against the user's role.
 - **Accounts.** Two-factor authentication on GitHub, Supabase and Vercel, and required for platform admins.
