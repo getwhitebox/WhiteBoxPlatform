@@ -12,6 +12,9 @@ import type { Role } from "@/generated/prisma/client";
 
 export const COMPANY_COOKIE = "wb_company";
 
+/** Roles that must use two-factor login. */
+const ADMIN_ROLES: Role[] = ["ORG_OWNER", "ORG_ADMIN", "COMPANY_ADMIN"];
+
 export type CompanySummary = {
   id: string;
   name: string;
@@ -44,6 +47,12 @@ export const requireSession = cache(async (): Promise<Session> => {
   if (error || !data.user) redirect("/login");
   const authUser = data.user;
 
+  // Two-factor: anyone who has set it up must enter their code after the
+  // password before seeing anything.
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  const twoFactorDone = aal?.currentLevel === "aal2";
+  if (aal?.nextLevel === "aal2" && !twoFactorDone) redirect("/mfa");
+
   const chosenCompanyId = (await cookies()).get(COMPANY_COOKIE)?.value;
 
   const result = await withUser(authUser.id, async (db) => {
@@ -69,6 +78,12 @@ export const requireSession = cache(async (): Promise<Session> => {
 
   if (!result) redirect("/login?error=no-account");
   const { user, companies, memberships } = result;
+
+  // Administrators must use two-factor login. Without it they are sent to
+  // the setup page and can't use the app.
+  const isAdmin =
+    user.isPlatformAdmin || memberships.some((m) => ADMIN_ROLES.includes(m.role));
+  if (isAdmin && !twoFactorDone) redirect("/account/security?required=1");
 
   if (companies.length === 0) redirect("/no-access");
 

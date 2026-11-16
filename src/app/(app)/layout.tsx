@@ -1,4 +1,5 @@
 // Layout for every logged-in page: header, navigation, company switcher.
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOut } from "@/app/auth-actions";
 import { AppNav } from "@/components/app-nav";
@@ -35,6 +36,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             <span className="hidden text-sm text-zinc-500 sm:inline dark:text-zinc-400">
               {session.fullName ?? session.email}
             </span>
+            <Link
+              href="/account/security"
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              Security
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"
