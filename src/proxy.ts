@@ -8,11 +8,22 @@
 // =============================================================================
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { checkSupabaseConfig, configProblemPage } from "@/lib/config";
 
 // Pages anyone can open without logging in.
 const PUBLIC_PATHS = ["/login", "/forgot-password", "/auth"];
 
 export async function proxy(request: NextRequest) {
+  // If a required setting is missing or malformed, say which one (by name).
+  const problems = checkSupabaseConfig();
+  if (problems.length > 0) {
+    console.error("Configuration problems:", problems);
+    return new NextResponse(configProblemPage(problems), {
+      status: 503,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
