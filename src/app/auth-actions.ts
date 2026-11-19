@@ -43,11 +43,23 @@ export async function requestPasswordReset(
   if (!email) return { error: "Enter your email address." };
 
   const supabase = await createSupabaseServer();
-  await supabase.auth.resetPasswordForEmail(email, {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${await siteOrigin()}/auth/callback?next=/account/password`,
   });
 
-  // Always the same answer, whether or not the email has an account.
+  // Supabase reports success whether or not the email has an account, so an
+  // error here is a real problem (e.g. email limit reached) and safe to show.
+  if (error) {
+    console.error("Password reset email failed:", error.status, error.code, error.message);
+    return {
+      error:
+        error.status === 429
+          ? "Too many reset emails were sent recently. Please wait an hour and try again."
+          : `The reset email couldn't be sent (${error.message}). Please contact your administrator.`,
+    };
+  }
+
+  // Same answer whether or not the email has an account.
   return {
     message:
       "If that email has an account, a reset link is on its way. Open it on this same device and browser.",
