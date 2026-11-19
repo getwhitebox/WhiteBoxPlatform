@@ -6,6 +6,25 @@
 
 export type ConfigProblem = { name: string; problem: string };
 
+/**
+ * A short, safe description of what was received. Only used for the two
+ * PUBLIC settings (they are visible to every browser by design) – never for
+ * the database address or any secret.
+ */
+function hint(value: string) {
+  const looksLike = /^https?:\/\//i.test(value)
+    ? "which looks like a web address"
+    : value.startsWith("sb_publishable_")
+      ? "which looks like a publishable key"
+      : value.startsWith("sb_secret_")
+        ? "which looks like a SECRET key"
+        : value.startsWith("postgres")
+          ? "which looks like a database address"
+          : "which isn't a recognized format";
+  const start = value.startsWith("sb_secret_") || value.startsWith("postgres") ? "(hidden)" : `"${value.slice(0, 16)}…"`;
+  return ` — received ${value.length} characters starting ${start}, ${looksLike}`;
+}
+
 export function checkSupabaseConfig(): ConfigProblem[] {
   const problems: ConfigProblem[] = [];
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,7 +37,7 @@ export function checkSupabaseConfig(): ConfigProblem[] {
   } else if (!/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(url)) {
     problems.push({
       name: "NEXT_PUBLIC_SUPABASE_URL",
-      problem: "should look exactly like https://xxxx.supabase.co (nothing after .co)",
+      problem: "should look exactly like https://xxxx.supabase.co (nothing after .co)" + hint(url),
     });
   }
 
@@ -34,7 +53,7 @@ export function checkSupabaseConfig(): ConfigProblem[] {
   } else if (!key.startsWith("sb_publishable_") && !key.startsWith("eyJ")) {
     problems.push({
       name: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-      problem: "should start with sb_publishable_",
+      problem: "should start with sb_publishable_" + hint(key),
     });
   }
 
@@ -44,7 +63,7 @@ export function checkSupabaseConfig(): ConfigProblem[] {
 /** A plain page listing configuration problems (names only, no values). */
 export function configProblemPage(problems: ConfigProblem[]) {
   const items = problems
-    .map((p) => `<li><code>${p.name}</code> ${p.problem}</li>`)
+    .map((p) => `<li><code>${p.name}</code> ${escapeHtml(p.problem)}</li>`)
     .join("");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Setup problem</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.5">
@@ -53,4 +72,8 @@ export function configProblemPage(problems: ConfigProblem[]) {
 <ul>${items}</ul>
 <p>After fixing them, redeploy the site.</p>
 </body></html>`;
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
