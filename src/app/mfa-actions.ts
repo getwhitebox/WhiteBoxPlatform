@@ -29,5 +29,7 @@ export async function verifyCode(_prev: CodeState, formData: FormData): Promise<
     };
   }
 
-  redirect("/");
+  // Continue where the person was going (only pages on this site).
+  const next = String(formData.get("next") ?? "/");
+  redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/");
 }

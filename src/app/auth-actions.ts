@@ -93,6 +93,12 @@ export async function updatePassword(_prev: FormState, formData: FormData): Prom
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login");
 
+  // With two-factor on, the code must be entered before changing the password.
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    redirect("/mfa?next=/account/password");
+  }
+
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { error: error.message };
 

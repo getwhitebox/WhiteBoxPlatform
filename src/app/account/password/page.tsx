@@ -1,47 +1,19 @@
-"use client";
-import { useActionState } from "react";
-import { updatePassword, type FormState } from "@/app/auth-actions";
-import { AuthCard, buttonClass, FormMessage, inputClass } from "@/components/auth-card";
+// Set a new password. People with two-factor turned on must enter their
+// 6-digit code first (Supabase requires it before a password change).
+import { redirect } from "next/navigation";
+import { createSupabaseServer } from "@/lib/supabase/server";
+import { PasswordForm } from "./password-form";
 
-export default function SetPasswordPage() {
-  const [state, action, pending] = useActionState<FormState, FormData>(updatePassword, {});
+export default async function SetPasswordPage() {
+  const supabase = await createSupabaseServer();
 
-  return (
-    <AuthCard title="Set a new password" subtitle="At least 12 characters">
-      <form action={action} className="space-y-4">
-        <div className="space-y-1">
-          <label htmlFor="password" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            New password
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            minLength={12}
-            required
-            className={inputClass}
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="confirm" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Confirm new password
-          </label>
-          <input
-            id="confirm"
-            name="confirm"
-            type="password"
-            autoComplete="new-password"
-            minLength={12}
-            required
-            className={inputClass}
-          />
-        </div>
-        <FormMessage error={state.error} />
-        <button type="submit" disabled={pending} className={buttonClass}>
-          {pending ? "Saving…" : "Save password"}
-        </button>
-      </form>
-    </AuthCard>
-  );
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) redirect("/login");
+
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    redirect("/mfa?next=/account/password");
+  }
+
+  return <PasswordForm />;
 }

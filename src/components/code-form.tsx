@@ -4,12 +4,18 @@ import { verifyCode, type CodeState } from "@/app/mfa-actions";
 import { buttonClass, FormMessage, inputClass } from "@/components/auth-card";
 
 /** Form for entering a 6-digit authenticator code. */
-export function CodeForm({ factorId, buttonLabel }: { factorId: string; buttonLabel: string }) {
+export function CodeForm({ factorId, buttonLabel, next = "/" }: {
+  factorId: string;
+  buttonLabel: string;
+  /** Page to go to after a correct code. */
+  next?: string;
+}) {
   const [state, action, pending] = useActionState<CodeState, FormData>(verifyCode, {});
 
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="factorId" value={factorId} />
+      <input type="hidden" name="next" value={next} />
       <div className="space-y-1">
         <label htmlFor="code" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           6-digit code
