@@ -2,15 +2,9 @@
 import { withUser } from "@/lib/db";
 import { requireSession } from "@/lib/session";
 import type { ContainerStatus } from "@/generated/prisma/client";
+import { CONTAINER_STATUS_LABELS } from "@/lib/labels";
 
-const STATUS_LABELS: Record<ContainerStatus, string> = {
-  AVAILABLE: "Available",
-  RESERVED: "Reserved",
-  IN_TRANSIT: "In transit",
-  ON_RENT: "On rent",
-  MAINTENANCE: "Maintenance",
-  RETIRED: "Retired",
-};
+const STATUS_LABELS = CONTAINER_STATUS_LABELS;
 
 export default async function DashboardPage() {
   const session = await requireSession();
@@ -45,7 +39,7 @@ export default async function DashboardPage() {
         <h2 id="fleet" className="mb-4 font-medium text-zinc-900 dark:text-zinc-100">
           Fleet · {total} containers
         </h2>
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
           {(Object.keys(STATUS_LABELS) as ContainerStatus[]).map((status) => (
             <div key={status} className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950">
               <dt className="text-xs text-zinc-500 dark:text-zinc-400">{STATUS_LABELS[status]}</dt>

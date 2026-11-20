@@ -5,6 +5,7 @@ import { signOut } from "@/app/auth-actions";
 import { AppNav } from "@/components/app-nav";
 import { CompanySwitcher } from "@/components/company-switcher";
 import { requireSession } from "@/lib/session";
+import { canManageSettings } from "@/server/permissions";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await requireSession();
@@ -56,7 +57,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
       <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-4 md:flex-row md:gap-6 md:py-6">
         <aside className="md:w-48 md:shrink-0">
-          <AppNav />
+          <AppNav showSettings={canManageSettings(session)} />
         </aside>
         <main className="min-w-0 flex-1">{children}</main>
       </div>

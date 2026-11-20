@@ -21,6 +21,7 @@ export type CompanySummary = {
   organizationId: string;
   organizationName: string;
   brandName: string;
+  timeZone: string;
 };
 
 export type Session = {
@@ -93,6 +94,7 @@ export const requireSession = cache(async (): Promise<Session> => {
     organizationId: c.organizationId,
     organizationName: c.organization.name,
     brandName: c.brands[0]?.name ?? c.name,
+    timeZone: c.timeZone,
   }));
 
   const company = summaries.find((c) => c.id === chosenCompanyId) ?? summaries[0];

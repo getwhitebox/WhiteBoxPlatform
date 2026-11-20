@@ -90,7 +90,22 @@ async function main() {
     });
   }
 
-  // 6. Containers WB001 – WB040, each with an "added to fleet" history entry
+  // 6. Customer categories (editable later in Settings)
+  const categoryNames = [
+    "Consumer",
+    "Remodeler",
+    "Restoration contractor",
+    "Construction contractor",
+  ];
+  for (const [i, name] of categoryNames.entries()) {
+    await prisma.customerCategory.upsert({
+      where: { companyId_name: { companyId: company.id, name } },
+      update: {},
+      create: { companyId: company.id, name, sortOrder: i },
+    });
+  }
+
+  // 7. Containers WB001 – WB040, each with an "added to fleet" history entry
   let created = 0;
   for (let n = 1; n <= CONTAINER_COUNT; n++) {
     const unitNumber = `${company.unitPrefix}${String(n).padStart(3, "0")}`;

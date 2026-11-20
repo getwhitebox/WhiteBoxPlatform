@@ -66,22 +66,23 @@ model Company {
   updatedAt      DateTime  @updatedAt @db.Timestamptz
   archivedAt     DateTime? @db.Timestamptz
 
-  organization     Organization        @relation(fields: [organizationId], references: [id])
-  brands           Brand[]
-  locations        Location[]
-  memberships      Membership[]
-  employees        Employee[]
-  customers        Customer[]
-  customerContacts CustomerContact[]
-  projects         Project[]
-  containerTypes   ContainerType[]
-  containers       Container[]
-  containerEvents  ContainerEvent[]
-  maintenance      MaintenanceRecord[]
-  rentals          Rental[]
-  jobs             Job[]
-  externalLinks    ExternalLink[]
-  activityNotes    ActivityNote[]
+  organization       Organization        @relation(fields: [organizationId], references: [id])
+  brands             Brand[]
+  locations          Location[]
+  memberships        Membership[]
+  employees          Employee[]
+  customers          Customer[]
+  customerCategories CustomerCategory[]
+  customerContacts   CustomerContact[]
+  projects           Project[]
+  containerTypes     ContainerType[]
+  containers         Container[]
+  containerEvents    ContainerEvent[]
+  maintenance        MaintenanceRecord[]
+  rentals            Rental[]
+  jobs               Job[]
+  externalLinks      ExternalLink[]
+  activityNotes      ActivityNote[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -228,9 +229,23 @@ model Employee {
 // 2. CUSTOMERS & PROJECTS
 // =============================================================================
 
-enum CustomerType {
-  RESIDENTIAL
-  COMMERCIAL
+/// Customer categories, editable per company, e.g. Consumer, Remodeler,
+/// Restoration contractor, Construction contractor.
+model CustomerCategory {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  companyId  String    @db.Uuid
+  name       String
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @db.Timestamptz
+  archivedAt DateTime? @db.Timestamptz
+
+  company   Company    @relation(fields: [companyId], references: [id])
+  customers Customer[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("customer_categories")
 }
 
 enum CustomerStatus {
@@ -239,30 +254,31 @@ enum CustomerStatus {
 }
 
 model Customer {
-  id                  String         @id @default(uuid(7)) @db.Uuid
-  companyId           String         @db.Uuid
-  brandId             String?        @db.Uuid
-  type                CustomerType   @default(RESIDENTIAL)
-  status              CustomerStatus @default(ACTIVE)
-  displayName         String // how the customer appears in lists
-  firstName           String?
-  lastName            String?
-  businessName        String?
-  email               String?
-  phone               String?
-  billingAddressLine1 String?
-  billingAddressLine2 String?
-  billingCity         String?
-  billingState        String?
-  billingPostalCode   String?
-  billingCountry      String         @default("US")
-  notes               String?
-  createdAt           DateTime       @default(now()) @db.Timestamptz
-  updatedAt           DateTime       @updatedAt @db.Timestamptz
-  archivedAt          DateTime?      @db.Timestamptz
+  id           String         @id @default(uuid(7)) @db.Uuid
+  companyId    String         @db.Uuid
+  brandId      String?        @db.Uuid
+  categoryId   String?        @db.Uuid
+  status       CustomerStatus @default(ACTIVE)
+  displayName  String // how the customer appears in lists
+  firstName    String?
+  lastName     String?
+  businessName String? // for remodelers and contractors
+  email        String?
+  phone        String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String         @default("US")
+  notes        String?
+  createdAt    DateTime       @default(now()) @db.Timestamptz
+  updatedAt    DateTime       @updatedAt @db.Timestamptz
+  archivedAt   DateTime?      @db.Timestamptz
 
   company  Company           @relation(fields: [companyId], references: [id])
   brand    Brand?            @relation(fields: [brandId], references: [id])
+  category CustomerCategory? @relation(fields: [categoryId], references: [id])
   contacts CustomerContact[]
   projects Project[]
 
@@ -302,29 +318,41 @@ enum ProjectStatus {
   CANCELLED
 }
 
-/// A job or site for a customer. A customer can have many projects.
+/// A JOB SITE for a customer (called "Job site" in the app).
+/// A customer can have many job sites; each can hold several containers.
 model Project {
-  id                 String        @id @default(uuid(7)) @db.Uuid
-  companyId          String        @db.Uuid
-  customerId         String        @db.Uuid
-  name               String // e.g. "Kitchen remodel – 12 Oak St"
-  status             ProjectStatus @default(QUOTE)
-  siteAddressLine1   String?
-  siteAddressLine2   String?
-  siteCity           String?
-  siteState          String?
-  sitePostalCode     String?
-  siteCountry        String        @default("US")
-  siteLatitude       Decimal?      @db.Decimal(9, 6)
-  siteLongitude      Decimal?      @db.Decimal(9, 6)
-  siteContactId      String?       @db.Uuid
-  accessInstructions String? // gate codes, placement, hazards
-  startDate          DateTime?     @db.Date
-  endDate            DateTime?     @db.Date
-  notes              String?
-  createdAt          DateTime      @default(now()) @db.Timestamptz
-  updatedAt          DateTime      @updatedAt @db.Timestamptz
-  archivedAt         DateTime?     @db.Timestamptz
+  id                    String        @id @default(uuid(7)) @db.Uuid
+  companyId             String        @db.Uuid
+  customerId            String        @db.Uuid
+  name                  String // e.g. "12 Oak St – water damage"
+  status                ProjectStatus @default(QUOTE)
+  customerReference     String? // PO, job or insurance-claim number
+  siteAddressLine1      String?
+  siteAddressLine2      String?
+  siteCity              String?
+  siteState             String?
+  sitePostalCode        String?
+  siteCountry           String        @default("US")
+  siteLatitude          Decimal?      @db.Decimal(9, 6)
+  siteLongitude         Decimal?      @db.Decimal(9, 6)
+  // Moving: where the container goes next (often after a stay in the yard)
+  newAddressLine1       String?
+  newAddressLine2       String?
+  newCity               String?
+  newState              String?
+  newPostalCode         String?
+  // For drivers
+  accessCode            String? // gate or lockbox code
+  placementInstructions String? // e.g. "Left side of driveway, doors facing street"
+  siteContactName       String?
+  siteContactPhone      String?
+  siteContactId         String?       @db.Uuid
+  startDate             DateTime?     @db.Date
+  endDate               DateTime?     @db.Date
+  notes                 String?
+  createdAt             DateTime      @default(now()) @db.Timestamptz
+  updatedAt             DateTime      @updatedAt @db.Timestamptz
+  archivedAt            DateTime?     @db.Timestamptz
 
   company          Company          @relation(fields: [companyId], references: [id])
   customer         Customer         @relation(fields: [customerId], references: [id])
@@ -370,6 +398,7 @@ enum ContainerStatus {
   RESERVED // promised to an upcoming rental
   IN_TRANSIT // on the truck
   ON_RENT // at a customer's site
+  IN_STORAGE // still rented and full, stored at one of our yards
   MAINTENANCE // being repaired or serviced
   RETIRED // permanently out of service
 }

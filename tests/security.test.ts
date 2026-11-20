@@ -271,6 +271,23 @@ describe("2. Company walls", () => {
     });
   });
 
+  test("customer categories are separated by company", async () => {
+    await inRollback(async () => {
+      const w = await buildWorld();
+      await actAs(w.users.staffB);
+      assert.equal(
+        await count(`SELECT count(*) AS n FROM customer_categories WHERE "companyId" = $1`, [w.companyA]),
+        0,
+      );
+      await expectRefused(
+        `INSERT INTO customer_categories (id, "companyId", name, "updatedAt")
+         VALUES (gen_random_uuid(), $1, 'Sneaky', now())`,
+        [w.companyA],
+        /row-level security/,
+      );
+    });
+  });
+
   test("staff cannot change another company's container", async () => {
     await inRollback(async () => {
       const w = await buildWorld();

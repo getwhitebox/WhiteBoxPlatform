@@ -5,19 +5,20 @@ import { usePathname } from "next/navigation";
 export const NAV_ITEMS = [
   { href: "/", label: "Dashboard" },
   { href: "/customers", label: "Customers" },
-  { href: "/projects", label: "Projects" },
+  { href: "/sites", label: "Job sites" },
   { href: "/containers", label: "Containers" },
   { href: "/rentals", label: "Rentals" },
   { href: "/schedule", label: "Schedule" },
 ];
 
 /** Navigation links. Vertical on wide screens, a scrolling row on phones. */
-export function AppNav() {
+export function AppNav({ showSettings = false }: { showSettings?: boolean }) {
   const pathname = usePathname();
+  const items = showSettings ? [...NAV_ITEMS, { href: "/settings/categories", label: "Settings" }] : NAV_ITEMS;
 
   return (
     <nav aria-label="Main" className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
-      {NAV_ITEMS.map((item) => {
+      {items.map((item) => {
         const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
         return (
           <Link
